@@ -1,0 +1,19 @@
+
+#env folder
+.venv/
+
+# Ignore setuptools metadata
+*.egg-info/
+
+# mypy caches
+.mypy_cache/
+
+# mypy caches
+.pytest_cache/
+
+# Mkdocs
+site/
+
+# coverage reports
+.coverage
+.coverage.*
