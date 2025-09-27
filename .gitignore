@@ -20,3 +20,5 @@ site/
 
 # data
 data/
+./data.*
+examples/data.ipynb
