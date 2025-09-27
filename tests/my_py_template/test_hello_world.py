@@ -1,4 +1,4 @@
-from my_py_template.hello_word import hello_word_function_printer
+from wikimedia_yard_reaas_test.maps import hello_word_function_printer
 import pytest
 
 

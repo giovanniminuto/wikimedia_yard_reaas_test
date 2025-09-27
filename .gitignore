@@ -17,3 +17,6 @@ site/
 # coverage reports
 .coverage
 .coverage.*
+
+# data
+data/

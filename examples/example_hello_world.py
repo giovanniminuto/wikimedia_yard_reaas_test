@@ -1,3 +1,0 @@
-from my_py_template.hello_word import hello_word_function_printer
-
-hello_word_function_printer()
