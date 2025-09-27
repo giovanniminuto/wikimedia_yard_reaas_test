@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pyspark.sql import functions as F
-
+from pyspark.sql.column import Column
 
 lang_map = {
     "aa": "Afar",
@@ -189,7 +189,14 @@ lang_map = {
     "zu": "Zulu",
 }
 
-lang_map_expr = F.create_map([F.lit(x) for x in sum(lang_map.items(), ())])
+
+def get_lang_map_expr() -> Column:
+    """
+    This function solve the problem
+    The problem is not your import anymore, it’s that you’re calling pyspark.sql.functions.lit() at module import time — but Spark isn’t initialized yet.
+    lit (and create_map) require a live SparkContext, and since you don’t have a SparkSession running when Python imports your module, it crashes:
+    """
+    return F.create_map([F.lit(x) for x in sum(lang_map.items(), ())])
 
 
 def hello_word_function_printer() -> None:

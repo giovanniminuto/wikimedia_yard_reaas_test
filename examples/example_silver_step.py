@@ -11,7 +11,7 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import StringType
 from pyspark.sql import functions as F
-from wikimedia_yard_reaas_test.maps import lang_map_expr
+from wikimedia_yard_reaas_test.maps import get_lang_map_expr
 
 # -----------------------
 # 1. Spark session
@@ -85,6 +85,7 @@ silver_df_domain_step = (
     )
 )
 
+lang_map_expr = get_lang_map_expr()
 
 silver_df_domain_step = silver_df_domain_step.withColumn(
     "language", lang_map_expr[col("lang_code")]
