@@ -72,7 +72,7 @@ silver_df.write.format("delta").mode("overwrite").save(silver_path)
 silver_df = spark.read.format("delta").load(silver_path)
 silver_df.show()
 
-# goldd
+# gold
 
 # Load data from Silver layer
 silver_df = spark.read.format("delta").load(silver_path)
