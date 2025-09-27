@@ -1,5 +1,9 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, LongType
+from pyspark.sql.functions import input_file_name, regexp_extract, substring_index
+from pyspark.sql import functions as F
+from pyspark.sql import functions as F
+from pyspark.sql.functions import input_file_name, regexp_extract, substring_index
 
 # -----------------------
 # 1. Spark session
@@ -33,22 +37,27 @@ raw_df = (
     .schema(raw_schema)  # enforce schema
     .csv(raw_path)
 )
-from pyspark.sql.functions import input_file_name, regexp_extract
 
-# Add a column with the full file path
-df_with_path = raw_df.withColumn("source_file", input_file_name())
 
-# Extract YYYYMMDD-HHMMSS part from the filename
-df_with_date = df_with_path.withColumn(
-    "file_datetime", regexp_extract("source_file", r"pageviews-(\d{8}-\d{6})", 1)
+# Add source_file column
+df_with_path = raw_df.withColumn("source_file", substring_index(input_file_name(), "/", -1))
+
+# Regex to capture YYYYMMDD and HHMMSS from the filename
+pattern = r"pageviews-(\d{8})-(\d{6})(?:\..*)?$"
+
+df_with_date_time = (
+    df_with_path.withColumn("file_date_str", regexp_extract("source_file", pattern, 1))
+    .withColumn("file_time_str", regexp_extract("source_file", pattern, 2))
+    .withColumn(
+        "file_timestamp",
+        F.to_timestamp(F.concat_ws("", "file_date_str", "file_time_str"), "yyyyMMddHHmmss"),
+    )
+    .withColumn("file_date", F.to_date("file_timestamp"))
+    .withColumn("file_time", F.date_format("file_timestamp", "HH:mm:ss"))  # keep as string
+    .drop("file_date_str", "file_time_str", "file_timestamp")
 )
 
-# If you want separate date and hour fields:
-df_with_date = df_with_date.withColumn(
-    "file_date", regexp_extract("file_datetime", r"(\d{8})", 1)
-).withColumn("file_time", regexp_extract("file_datetime", r"-(\d{6})", 1))
-# print(f"Bronze count = {raw_df.count():,}")
-df_with_date.show(20)
+df_with_date_time.show(10)
 
 # -----------------------
 # 4. Write to Bronze layer
@@ -56,7 +65,7 @@ df_with_date.show(20)
 bronze_path = "data/bronze/pageviews/2025-01"
 
 (
-    df_with_date.write.format("parquet")  # or "parquet"
+    df_with_date_time.write.format("parquet")  # or "parquet"
     .mode("overwrite")  # full refresh for now
     .save(bronze_path)
 )
