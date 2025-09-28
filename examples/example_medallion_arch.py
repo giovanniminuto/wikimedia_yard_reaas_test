@@ -82,7 +82,7 @@ gold_df = silver_df.groupBy("txn_type", to_date(col("txn_date"), "yyyy-MM").alia
     _sum("amount").alias("total_amount"), count("txn_id").alias("total_transactions")
 )
 
-# Save to Gold layer
+# Save to Gold layer with overwriting (overwriting is faster)
 gold_df.write.format("delta").mode("overwrite").save(gold_path)
 
 # Check the final report

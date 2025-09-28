@@ -12,67 +12,80 @@ from pyspark.sql.functions import (
 from pyspark.sql.types import StringType
 from pyspark.sql import functions as F
 from wikimedia_yard_reaas_test.maps import get_lang_map_expr
+from delta import configure_spark_with_delta_pip
+from pyspark.sql import functions as F, Window
 
 # -----------------------
 # 1. Spark session
 # -----------------------
-spark = (
+
+builder = (
     SparkSession.builder.appName("Wikimedia Gold Processing")
-    .config("spark.sql.shuffle.partitions", "200")
+    .config("spark.sql.files.maxPartitionBytes", "256MB")
     .config("spark.driver.memory", "4g")
-    .getOrCreate()
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
 )
+spark = configure_spark_with_delta_pip(builder).getOrCreate()
+
+spark.conf.set("spark.sql.shuffle.partitions", spark.sparkContext.defaultParallelism)
+spark.conf.set("spark.sql.files.maxRecordsPerFile", 2_000_000)
 
 # -----------------------
 # 2. Read Silver
 # -----------------------
 silver_path = "data/silver/pageviews/2025-01"
-silver_df = spark.read.parquet(silver_path)
-
-from pyspark.sql import functions as F, Window
 
 
-# -----------------------
-# 2. Aggregate to Daily per project + page
-# -----------------------
-daily_df = silver_df.groupBy("file_date", "database_name", "page_title").agg(
-    F.sum("count_views").alias("views_day")
-)
+silver_df = spark.read.format("delta").load(silver_path)
 
+
+silver_df.show(10)
+
+
+# outlier
 
 # -----------------------
-# 4. Compute Median + MAD per (dt, project)
-# -----------------------
+# # 2. Aggregate to Daily per project + page
+# # -----------------------
+# daily_df = silver_df.groupBy("file_date", "database_name", "page_title").agg(
+#     F.sum("count_views").alias("views_day")
+# )
 
-# Median
-median_df = daily_df.groupBy("file_date", "database_name").agg(
-    F.expr("percentile_approx(views_day, 0.5)").alias("median_views")
-)
 
-# Join back
-with_median = daily_df.join(median_df, on=["file_date", "database_name"], how="left")
+# # -----------------------
+# # 4. Compute Median + MAD per (dt, project)
+# # -----------------------
 
-# Compute absolute deviation from median
-with_dev = with_median.withColumn("abs_dev", F.abs(F.col("views_day") - F.col("median_views")))
+# # Median
+# median_df = daily_df.groupBy("file_date", "database_name").agg(
+#     F.expr("percentile_approx(views_day, 0.5)").alias("median_views")
+# )
 
-# Median absolute deviation
-mad_df = with_dev.groupBy("file_date", "database_name").agg(
-    F.expr("percentile_approx(abs_dev, 0.5)").alias("mad_views")
-)
+# # Join back
+# with_median = daily_df.join(median_df, on=["file_date", "database_name"], how="left")
 
-# Join back
-with_mad = with_dev.join(mad_df, on=["file_date", "database_name"], how="left")
+# # Compute absolute deviation from median
+# with_dev = with_median.withColumn("abs_dev", F.abs(F.col("views_day") - F.col("median_views")))
 
-# -----------------------
-# 5. Outlier flag
-# -----------------------
-gold_df = with_mad.withColumn(
-    "is_outlier", (F.col("views_day") > F.col("median_views") + 10 * F.col("mad_views"))
-).drop(
-    "abs_dev"
-)  # cleanup
+# # Median absolute deviation
+# mad_df = with_dev.groupBy("file_date", "database_name").agg(
+#     F.expr("percentile_approx(abs_dev, 0.5)").alias("mad_views")
+# )
 
-gold_df.show(100)
+# # Join back
+# with_mad = with_dev.join(mad_df, on=["file_date", "database_name"], how="left")
+
+# # -----------------------
+# # 5. Outlier flag
+# # -----------------------
+# gold_df = with_mad.withColumn(
+#     "is_outlier", (F.col("views_day") > F.col("median_views") + 10 * F.col("mad_views"))
+# ).drop(
+#     "abs_dev"
+# )  # cleanup
+
+# gold_df.show(100)
 
 # -----------------------
 # 6. Write Gold

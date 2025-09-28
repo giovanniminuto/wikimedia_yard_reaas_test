@@ -12,25 +12,37 @@ from pyspark.sql.functions import (
 from pyspark.sql.types import StringType
 from pyspark.sql import functions as F
 from wikimedia_yard_reaas_test.maps import get_lang_map_expr
+from delta import configure_spark_with_delta_pip
+
 
 # -----------------------
 # 1. Spark session
 # -----------------------
-spark = (
+builder = (
     SparkSession.builder.appName("Wikimedia Silver Processing")
-    .config("spark.sql.shuffle.partitions", "200")
-    .config("spark.driver.memory", "4g")
-    .getOrCreate()
+    .config("spark.sql.files.maxPartitionBytes", "256MB")
+    .config("spark.driver.memory", "10g")
+    .config("spark.executor.memory", "10g")
+    .config("spark.executor.cores", "7")
+    .config("spark.memory.offHeap.enabled", "true")
+    .config("spark.memory.offHeap.size", "4g")
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
 )
 
+spark = configure_spark_with_delta_pip(builder).getOrCreate()
+
+spark.conf.set("spark.sql.shuffle.partitions", spark.sparkContext.defaultParallelism)
+spark.conf.set("spark.sql.files.maxRecordsPerFile", 2_000_000)
 # -----------------------
 # 2. Read Bronze
 # -----------------------
 bronze_path = "data/bronze/pageviews/2025-01"
-bronze_df = spark.read.parquet(bronze_path)
+bronze_df = spark.read.format("delta").load(bronze_path)
 
 
-#
+bronze_df.show(100)
+
 
 bronze_df_checked = (
     bronze_df.filter((F.col("count_views") >= 0) & (F.col("count_views") <= 1_000_000_000))
@@ -121,18 +133,23 @@ silver_df_page_title = (
         ).otherwise(col("page_title")),
     )
 )
-silver_df_page_title.show(10)
+silver_df_page_title.show(100)
 
 # -----------------------
 # 5. Write Silver
 # -----------------------
 silver_path = "data/silver/pageviews/2025-01"
 
-(
-    silver_df_page_title.write.format("parquet")
-    .mode("overwrite")
-    .partitionBy("file_date")
-    .save(silver_path)
-)
+
+dates = [row.file_date for row in bronze_df.select("file_date").distinct().collect()]
+for d in dates:
+    (
+        silver_df_page_title.filter(col("file_date") == d)
+        .write.format("delta")
+        .option("compression", "snappy")
+        .mode("append")
+        .partitionBy("file_date")
+        .save(silver_path)
+    )
 
 print(f"✅ Silver table written to {silver_path}")
