@@ -1,8 +1,7 @@
-from pyspark.sql import functions as F
-
-
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+from pyspark.sql.functions import col
 
 
 def dau(df: DataFrame) -> DataFrame:
@@ -117,7 +116,177 @@ def stickness_df(dau_df: DataFrame, mau_df: DataFrame) -> DataFrame:
             - MAU (int)
             - stickiness (float)
     """
-    stickiness_df = dau_df.join(mau_df, on=["language", "database_name"], how="inner").withColumn(
-        "stickiness", F.col("DAU") / F.col("MAU")
-    )
+    dau_df = dau_df.withColumn("month", F.date_format("file_date", "yyyy-MM"))
+
+    stickiness_df = dau_df.join(
+        mau_df, on=["language", "database_name", "month"], how="inner"
+    ).withColumn("stickiness", F.col("DAU") / F.col("MAU"))
     return stickiness_df
+
+
+def diversity(df: DataFrame) -> DataFrame:
+    """
+    Compute the daily content diversity index for each language/project.
+
+    The diversity index is defined as:
+        distinct_pages / total_views
+    where:
+        - distinct_pages = number of distinct pages viewed on that day
+        - total_views    = total number of page views on that day
+
+    Args:
+        df (DataFrame): Input dataframe with columns
+            - file_date (string, format 'yyyyMMdd')
+            - language (string)
+            - database_name (string)
+            - page_title (string)
+            - count_views (int)
+
+    Returns:
+        DataFrame: Aggregated dataframe with columns:
+            - dt (date)
+            - language
+            - database_name
+            - distinct_pages (int)
+            - total_views (int)
+            - diversity_index (float)
+    """
+    diversity_df = (
+        df.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
+        .groupBy("dt", "language", "database_name")
+        .agg(
+            F.countDistinct("page_title").alias("distinct_pages"),
+            F.sum("count_views").alias("total_views"),
+        )
+        .withColumn("diversity_index", F.col("distinct_pages") / F.col("total_views"))
+    )
+    return diversity_df
+
+
+def shannon_entropy(df: DataFrame) -> DataFrame:
+    """
+    Compute Shannon entropy of page views per day/project.
+
+    Shannon entropy measures how evenly distributed attention is across pages:
+        H = - Σ p * log(p)
+    where p = probability of a page being viewed.
+
+    Args:
+        df (DataFrame): Input dataframe with columns
+            - file_date (string, format 'yyyyMMdd')
+            - language (string)
+            - database_name (string)
+            - page_title (string)
+            - count_views (int)
+
+    Returns:
+        DataFrame: Aggregated dataframe with columns:
+            - dt (date)
+            - language
+            - database_name
+            - shannon_entropy (float)
+    """
+    page_dist_df = (
+        df.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
+        .groupBy("dt", "language", "database_name", "page_title")
+        .agg(F.sum("count_views").alias("views_page"))
+    )
+
+    total_views_df = page_dist_df.groupBy("dt", "language", "database_name").agg(
+        F.sum("views_page").alias("total_views")
+    )
+
+    prob_df = page_dist_df.join(total_views_df, on=["dt", "language", "database_name"])
+    prob_df = prob_df.withColumn("p", F.col("views_page") / F.col("total_views"))
+
+    shannon_entropy_df = (
+        prob_df.withColumn("entropy_term", -F.col("p") * F.log(F.col("p")))
+        .groupBy("dt", "language", "database_name")
+        .agg(F.sum("entropy_term").alias("shannon_entropy"))
+    )
+    return shannon_entropy_df
+
+
+def top_10_100_pages(df: DataFrame) -> DataFrame:
+    """
+    Compute the dominance of top-10 and top-100 pages by views.
+
+    For each day/project:
+        - Ranks pages by their daily views.
+        - Computes share of total views coming from top-10 and top-100 pages.
+
+    Args:
+        df (DataFrame): Input dataframe with columns
+            - file_date (string, format 'yyyyMMdd')
+            - language (string)
+            - database_name (string)
+            - page_title (string)
+            - count_views (int)
+
+    Returns:
+        DataFrame: Aggregated dataframe with columns:
+            - dt (date)
+            - language
+            - database_name
+            - total_views (int)
+            - top10_views (int)
+            - top100_views (int)
+            - top10_share (float)
+            - top100_share (float)
+    """
+    page_dist_df = (
+        df.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
+        .groupBy("dt", "language", "database_name", "page_title")
+        .agg(F.sum("count_views").alias("views_page"))
+    )
+
+    window_spec = Window.partitionBy("dt", "language", "database_name").orderBy(
+        F.desc("views_page")
+    )
+
+    ranked_df = page_dist_df.withColumn("rank", F.row_number().over(window_spec))
+
+    topN_df = (
+        ranked_df.withColumn(
+            "top10_views", F.when(col("rank") <= 10, col("views_page")).otherwise(0)
+        )
+        .withColumn("top100_views", F.when(col("rank") <= 100, col("views_page")).otherwise(0))
+        .groupBy("dt", "language", "database_name")
+        .agg(
+            F.sum("views_page").alias("total_views"),
+            F.sum("top10_views").alias("top10_views"),
+            F.sum("top100_views").alias("top100_views"),
+        )
+        .withColumn("top10_share", F.col("top10_views") / F.col("total_views"))
+        .withColumn("top100_share", F.col("top100_views") / F.col("total_views"))
+    )
+    return topN_df
+
+
+def language_engagement(df: DataFrame) -> DataFrame:
+    """
+    Compute daily engagement per language/project.
+
+    Engagement here is measured as the total number of page views
+    on a given day for a language/project.
+
+    Args:
+        df (DataFrame): Input dataframe with columns
+            - file_date (string, format 'yyyyMMdd')
+            - language (string)
+            - database_name (string)
+            - count_views (int)
+
+    Returns:
+        DataFrame: Aggregated dataframe with columns:
+            - dt (date)
+            - language
+            - database_name
+            - views_per_day (int)
+    """
+    lang_engagement_df = (
+        df.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
+        .groupBy("dt", "language", "database_name")
+        .agg(F.sum("count_views").alias("views_per_day"))
+    )
+    return lang_engagement_df

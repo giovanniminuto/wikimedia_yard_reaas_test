@@ -1,21 +1,24 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, LongType
-from pyspark.sql.functions import input_file_name, regexp_extract, substring_index
+from pyspark.sql.functions import input_file_name, substring_index, col
 from pyspark.sql import functions as F
-from pyspark.sql.functions import input_file_name, regexp_extract, substring_index, substring
+from pyspark.sql.functions import input_file_name, substring_index, substring
 from delta import configure_spark_with_delta_pip
 
 # -----------------------
 # 1. Spark session
 # -----------------------
 builder = (
-    SparkSession.builder.appName("Wikimedia Bronze Ingestion")
+    SparkSession.builder.appName("Wikimedia Bronze Processing")
     .config("spark.sql.files.maxPartitionBytes", "256MB")
-    .config("spark.driver.memory", "4g")
+    .config("spark.driver.memory", "12g")
+    .config("spark.executor.memory", "12g")
+    .config("spark.executor.cores", "8")
+    .config("spark.memory.offHeap.enabled", "true")
+    .config("spark.memory.offHeap.size", "3g")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
 )
-
 spark = configure_spark_with_delta_pip(builder).getOrCreate()
 
 spark.conf.set("spark.sql.shuffle.partitions", spark.sparkContext.defaultParallelism)
@@ -36,7 +39,7 @@ raw_schema = StructType(
 # -----------------------
 # 3. Read raw gz files
 # -----------------------
-raw_path = "data/raw/pageviews/2025-01/*.gz"  # adjust to your folder
+raw_path = "data/raw/pageviews/2025-01/pageviews-20250110*.gz"  # adjust to your folder
 raw_df = (
     spark.read.option("sep", " ")  # space-separated
     .schema(raw_schema)  # enforce schema
@@ -74,13 +77,15 @@ df_with_date_time.show(10)
 # -----------------------
 bronze_path = "data/bronze/pageviews/2025-01"
 
-(
-    df_with_date_time.repartition("file_date")
-    .write.format("delta")
-    .option("compression", "snappy")
-    .mode("overwrite")
-    .partitionBy("file_date")
-    .save(bronze_path)
-)
+dates = [row.file_date for row in df_with_date_time.select("file_date").distinct().collect()]
+for d in dates:
+    (
+        df_with_date_time.filter(col("file_date") == d)
+        .write.format("delta")
+        .option("compression", "snappy")
+        .mode("append")
+        .partitionBy("file_date")
+        .save(bronze_path)
+    )
 
 print(f"✅ Bronze Delta written to {bronze_path}")

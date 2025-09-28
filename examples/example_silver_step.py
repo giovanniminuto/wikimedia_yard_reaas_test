@@ -14,7 +14,6 @@ from pyspark.sql import functions as F
 from wikimedia_yard_reaas_test.maps import get_lang_map_expr
 from delta import configure_spark_with_delta_pip
 
-
 # -----------------------
 # 1. Spark session
 # -----------------------
@@ -42,7 +41,6 @@ bronze_df = spark.read.format("delta").load(bronze_path)
 
 
 bronze_df.show(100)
-
 
 bronze_df_checked = (
     bronze_df.filter((F.col("count_views") >= 0) & (F.col("count_views") <= 1_000_000_000))
@@ -141,7 +139,7 @@ silver_df_page_title.show(100)
 silver_path = "data/silver/pageviews/2025-01"
 
 
-dates = [row.file_date for row in bronze_df.select("file_date").distinct().collect()]
+dates = [row.file_date for row in silver_df_page_title.select("file_date").distinct().collect()]
 for d in dates:
     (
         silver_df_page_title.filter(col("file_date") == d)

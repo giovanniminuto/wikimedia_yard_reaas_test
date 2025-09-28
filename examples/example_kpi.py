@@ -20,11 +20,11 @@ from pyspark.sql import functions as F, Window
 # -----------------------
 
 builder = (
-    SparkSession.builder.appName("Wikimedia Gold Processing")
+    SparkSession.builder.appName("Wikimedia KPI Processing")
     .config("spark.sql.files.maxPartitionBytes", "256MB")
-    .config("spark.driver.memory", "10g")
-    .config("spark.executor.memory", "10g")
-    .config("spark.executor.cores", "7")
+    .config("spark.driver.memory", "12g")
+    .config("spark.executor.memory", "12g")
+    .config("spark.executor.cores", "8")
     .config("spark.memory.offHeap.enabled", "true")
     .config("spark.memory.offHeap.size", "4g")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -39,18 +39,18 @@ spark.conf.set("spark.sql.files.maxRecordsPerFile", 2_000_000)
 # -----------------------
 # 2. Read Silver
 # -----------------------
-silver_path = "data/silver/pageviews/2025-01"
+filtered_only_language_path = "data/filtered_only_language/pageviews_daily/2025-01"
 
 
-silver_df = spark.read.format("delta").load(silver_path)
+filtered_only_language = spark.read.format("delta").load(filtered_only_language_path)
 
 
-silver_df.show(10)
+filtered_only_language.show(10)
 
 
 from wikimedia_yard_reaas_test.kpis import dau
 
-dau_df = dau(silver_df)
+dau_df = dau(filtered_only_language)
 
 dau_df.show(100)
 
