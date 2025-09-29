@@ -290,3 +290,49 @@ def language_engagement(df: DataFrame) -> DataFrame:
         .agg(F.sum("count_views").alias("views_per_day"))
     )
     return lang_engagement_df
+
+
+# outliers part
+# outlier
+
+# -----------------------
+# # 2. Aggregate to Daily per project + page
+# # -----------------------
+# daily_df = silver_df.groupBy("file_date", "database_name", "page_title").agg(
+#     F.sum("count_views").alias("views_day")
+# )
+
+
+# # -----------------------
+# # 4. Compute Median + MAD per (dt, project)
+# # -----------------------
+
+# # Median
+# median_df = daily_df.groupBy("file_date", "database_name").agg(
+#     F.expr("percentile_approx(views_day, 0.5)").alias("median_views")
+# )
+
+# # Join back
+# with_median = daily_df.join(median_df, on=["file_date", "database_name"], how="left")
+
+# # Compute absolute deviation from median
+# with_dev = with_median.withColumn("abs_dev", F.abs(F.col("views_day") - F.col("median_views")))
+
+# # Median absolute deviation
+# mad_df = with_dev.groupBy("file_date", "database_name").agg(
+#     F.expr("percentile_approx(abs_dev, 0.5)").alias("mad_views")
+# )
+
+# # Join back
+# with_mad = with_dev.join(mad_df, on=["file_date", "database_name"], how="left")
+
+# # -----------------------
+# # 5. Outlier flag
+# # -----------------------
+# gold_df = with_mad.withColumn(
+#     "is_outlier", (F.col("views_day") > F.col("median_views") + 10 * F.col("mad_views"))
+# ).drop(
+#     "abs_dev"
+# )  # cleanup
+
+# gold_df.show(100)
