@@ -1,5 +1,5 @@
 from pyspark.sql import functions as F
-from wikimedia_yard_reaas_test.cleaning_pipeline import read_delta_table, create_spark
+from wikimedia_yard_reaas_test.utils import create_spark, read_delta_table
 import matplotlib.pyplot as plt
 from pyspark.sql.window import Window
 

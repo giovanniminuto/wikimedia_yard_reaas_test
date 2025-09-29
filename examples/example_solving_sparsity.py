@@ -2,7 +2,8 @@
 # log_scaled = silver_df_page_title.withColumn("log_views", F.log1p("count_views"))
 
 from pyspark.sql import functions as F
-from wikimedia_yard_reaas_test.cleaning_pipeline import read_delta_table, create_spark
+from wikimedia_yard_reaas_test.utils import read_delta_table
+from wikimedia_yard_reaas_test.utils import create_spark
 import matplotlib.pyplot as plt
 
 # here I show a basic hipotesis, this could staisfy basically the request

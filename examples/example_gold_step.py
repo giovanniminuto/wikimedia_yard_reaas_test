@@ -1,10 +1,10 @@
 from wikimedia_yard_reaas_test.cleaning_pipeline import (
-    create_spark,
-    read_delta_table,
     language_filter,
     compute_daily_pageviews,
     compute_daily_summary,
 )
+from wikimedia_yard_reaas_test.utils import create_spark, read_delta_table
+
 
 # ----------------------
 # example of silver step

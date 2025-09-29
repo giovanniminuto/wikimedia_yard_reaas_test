@@ -1,58 +1,117 @@
 import os
 import requests
 from bs4 import BeautifulSoup
-import matplotlib.pyplot as plt
+from delta import configure_spark_with_delta_pip
 
-# Base URL and output folder
-base_url = "https://dumps.wikimedia.org/other/pageviews/2025/2025-01/"
-output_dir = "data/raw/pageviews/2025-01"
-os.makedirs(output_dir, exist_ok=True)
+from typing import Optional, Union, Callable
+from pathlib import Path
 
-# Step 1: Scrape the index page to get all file names
-resp = requests.get(base_url)
-soup = BeautifulSoup(resp.text, "html.parser")
 
-files = [
-    a["href"]
-    for a in soup.find_all("a")
-    if a["href"].startswith("pageviews-2025") and a["href"].endswith(".gz")
-]
+from pyspark.sql import SparkSession, DataFrame
 
-print(f"Found {len(files)} files to download")
 
-# Step 2: Download files if not already present
-for f in files:
-    url = base_url + f
-    out_path = os.path.join(output_dir, f)
-    if not os.path.exists(out_path):
-        print(f"Downloading {f}...")
-        r = requests.get(url, stream=True)
-        with open(out_path, "wb") as f_out:
-            for chunk in r.iter_content(chunk_size=8192):
-                f_out.write(chunk)
-    else:
-        print(f"Already downloaded {f}")
+def download_pageviews_files(base_url: str, output_dir: str) -> None:
+    # Step 1: Scrape the index page to get all file names
+    resp = requests.get(base_url)
+    soup = BeautifulSoup(resp.text, "html.parser")
 
-# Step 3: Compute total size of all downloaded files
-sizes = []
-names = []
+    files = [
+        a["href"]
+        for a in soup.find_all("a")
+        if a["href"].startswith("pageviews-2025") and a["href"].endswith(".gz")
+    ]
 
-for f in files:
-    out_path = os.path.join(output_dir, f)
-    size = os.path.getsize(out_path)  # bytes
-    sizes.append(size)
-    names.append(f)
+    print(f"Found {len(files)} files to download")
 
-total_bytes = sum(sizes)
-print(f"\nTotal bytes downloaded: {total_bytes:,}")
+    # Step 2: Download files if not already present
+    os.makedirs(output_dir, exist_ok=True)
 
-# Step 4: Plot
-plt.figure(figsize=(12, 6))
-plt.plot(range(len(sizes)), sizes, marker="o", label="File size (bytes)")
-plt.axhline(y=sum(sizes), color="r", linestyle="--", label="Total size")
-plt.xlabel("File index")
-plt.ylabel("Size (bytes)")
-plt.title("Downloaded Wikimedia Pageviews (January 2025)")
-plt.legend()
-plt.tight_layout()
-plt.show()
+    for f in files:
+        url = base_url + f
+        out_path = os.path.join(output_dir, f)
+        if not os.path.exists(out_path):
+            print(f"Downloading {f}...")
+            r = requests.get(url, stream=True)
+            with open(out_path, "wb") as f_out:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f_out.write(chunk)
+        else:
+            print(f"Already downloaded {f}")
+
+    # Step 3: Compute total size of all downloaded files
+    sizes = []
+    names = []
+
+    for f in files:
+        out_path = os.path.join(output_dir, f)
+        size = os.path.getsize(out_path)  # bytes
+        sizes.append(size)
+        names.append(f)
+
+    total_bytes = sum(sizes)
+    print(f"\nTotal bytes downloaded: {total_bytes:,}")
+
+
+def create_spark(app_name: str = "Wikimedia Bronze Processing") -> SparkSession:
+    """
+    Create and configure a Spark session with Delta Lake support.
+    """
+    builder = (
+        SparkSession.builder.appName(app_name)
+        .config("spark.sql.files.maxPartitionBytes", "256MB")
+        .config("spark.driver.memory", "12g")
+        .config("spark.executor.memory", "12g")
+        .config("spark.executor.cores", "8")
+        .config("spark.memory.offHeap.enabled", "true")
+        .config("spark.memory.offHeap.size", "3g")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config(
+            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        )
+    )
+    spark = configure_spark_with_delta_pip(builder).getOrCreate()
+
+    # Tune Spark shuffle and file writing
+    spark.conf.set("spark.sql.shuffle.partitions", spark.sparkContext.defaultParallelism)
+    spark.conf.set("spark.sql.files.maxRecordsPerFile", 2_000_000)
+
+    return spark
+
+
+def write_delta(
+    df: DataFrame,
+    delta_path: Union[Path, str],
+    mode_str: str = "append",
+    partition: str = "file_date",
+) -> None:
+    """
+    todo_move to utils
+    Write DataFrame to Delta Table partitioned by file_date.
+
+    Args:
+        df (DataFrame): Input dataframe
+        delta_path (str): Destination folder for Delta table
+    """
+    (
+        df.write.format("delta")
+        .option("compression", "snappy")
+        .mode(mode_str)
+        .partitionBy(partition)
+        .save(delta_path)
+    )
+    print(f"✅ Delta Table written to {delta_path}")
+
+
+def read_delta_table(spark: SparkSession, delta_table_path: Union[Path, str]) -> DataFrame:
+    """
+    todo: move in utils
+    Read Delta table.
+
+    Args:
+        spark (SparkSession): active Spark session
+        delta_table_path (str): path to Delta table
+
+    Returns:
+        DataFrame: delta table dataframe
+    """
+    return spark.read.format("delta").load(delta_table_path)

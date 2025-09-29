@@ -199,5 +199,45 @@ def get_lang_map_expr() -> Column:
     return F.create_map([F.lit(x) for x in sum(lang_map.items(), ())])
 
 
+valid_namespaces = [
+    "Article" "User",
+    "Wikipedia",
+    "WP",
+    "Project",
+    "File",
+    "Image",
+    "MediaWiki",
+    "Template",
+    "TM",
+    "Help",
+    "Category",
+    "Portal",
+    "Draft",
+    "TimedText",
+    "Module",
+    "MOS",
+    "Event",
+    "User talk",
+    "Talk",
+    "WT",
+    "Special",
+    "Help",
+    "Transwiki",
+    "Media",
+    "Wikipedia talk",
+    "File talk",
+    "MediaWiki talk",
+    "Template talk",
+    "Help talk",
+    "Category talk",
+    "Portal talk",
+    "Draft talk",
+    "MOS talk",
+    "TimedText talk",
+    "Module talk",
+    "Event talk",
+]
+
+
 def hello_word_function_printer() -> None:
     print("hello word")

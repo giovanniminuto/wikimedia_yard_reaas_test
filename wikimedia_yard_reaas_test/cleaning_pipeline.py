@@ -11,7 +11,6 @@ from pyspark.sql.functions import (
     size,
 )
 from pyspark.sql import functions as F
-from delta import configure_spark_with_delta_pip
 
 from typing import Optional, Union, Callable
 from pathlib import Path
@@ -20,33 +19,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.functions import col
 
 
-# -----------------------
-# Spark Session Builder
-# -----------------------
-def create_spark(app_name: str = "Wikimedia Bronze Processing") -> SparkSession:
-    """
-    Create and configure a Spark session with Delta Lake support.
-    """
-    builder = (
-        SparkSession.builder.appName(app_name)
-        .config("spark.sql.files.maxPartitionBytes", "256MB")
-        .config("spark.driver.memory", "12g")
-        .config("spark.executor.memory", "12g")
-        .config("spark.executor.cores", "8")
-        .config("spark.memory.offHeap.enabled", "true")
-        .config("spark.memory.offHeap.size", "3g")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config(
-            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
-        )
-    )
-    spark = configure_spark_with_delta_pip(builder).getOrCreate()
-
-    # Tune Spark shuffle and file writing
-    spark.conf.set("spark.sql.shuffle.partitions", spark.sparkContext.defaultParallelism)
-    spark.conf.set("spark.sql.files.maxRecordsPerFile", 2_000_000)
-
-    return spark
+from wikimedia_yard_reaas_test.utils import write_delta
 
 
 # -----------------------
@@ -69,7 +42,9 @@ def get_raw_schema() -> StructType:
 # -----------------------
 # Read raw data
 # -----------------------
-def bronze_read_raw_files(spark: SparkSession, input_dir: str, schema: StructType) -> DataFrame:
+def bronze_read_and_modify_raw_files(
+    spark: SparkSession, input_dir: str, schema: StructType
+) -> DataFrame:
     """
     Read all raw pageviews files in a directory and attach file metadata.
 
@@ -110,43 +85,6 @@ def bronze_read_raw_files(spark: SparkSession, input_dir: str, schema: StructTyp
     )
 
     return df_with_date_time
-
-
-# -----------------------
-# Write Bronze Delta
-# -----------------------
-def write_delta(df: DataFrame, delta_path: Union[Path, str], mode_str: str = "append") -> None:
-    """
-    todo_move to utils
-    Write DataFrame to Delta Table partitioned by file_date.
-
-    Args:
-        df (DataFrame): Input dataframe
-        delta_path (str): Destination folder for Delta table
-    """
-    (
-        df.write.format("delta")
-        .option("compression", "snappy")
-        .mode(mode_str)
-        .partitionBy("file_date")
-        .save(delta_path)
-    )
-    print(f"✅ Delta Table written to {delta_path}")
-
-
-def read_delta_table(spark: SparkSession, delta_table_path: Union[Path, str]) -> DataFrame:
-    """
-    todo: move in utils
-    Read Delta table.
-
-    Args:
-        spark (SparkSession): active Spark session
-        delta_table_path (str): path to Delta table
-
-    Returns:
-        DataFrame: delta table dataframe
-    """
-    return spark.read.format("delta").load(delta_table_path)
 
 
 def silver_apply_quality_checks(df: DataFrame) -> DataFrame:
