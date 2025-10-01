@@ -26,3 +26,6 @@ data/
 # files
 *.png
 examples/*.png
+
+# api caches
+apicache/
