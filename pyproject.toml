@@ -18,6 +18,7 @@ dependencies = [
     "types-requests",
     "scikit-learn==1.7.2",
     "matplotlib==3.10.6",
+    "pandas==2.3.2",
     "nbconvert",        # convert notebooks
     "ipykernel",        # Jupyter kernel support
 ]

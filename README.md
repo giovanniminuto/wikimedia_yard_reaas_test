@@ -22,6 +22,7 @@ python example_file_download.py
 ```
 Downloads the Wikimedia pageviews dump (Jan 2025) from
 https://dumps.wikimedia.org/other/pageviews/2025/2025-01/
+
 2. Bronze Layer
 ```
 python example_bronze_step.py
@@ -43,25 +44,30 @@ python example_train_model.py
 ```
 Trains a churn prediction model using HistGradientBoostingClassifier, with hyperparameter tuning and feature explainability.
 ## Repository Structure
+```
 .
 ├── examples/
 │   ├── example_file_download.py
 │   ├── example_bronze_step.py
 │   ├── example_silver_step.py
 │   ├── example_gold_step.py
-│   └── example_train_model.py
-│   └── notebook_databricks_training.ipynb
+│   ├── example_train_model.py
+│   ├── analysis_italian_table.ipynb  the notebook used to do the analysis on the italian in dataset
+│   └── notebook_databricks_training.ipynb # the notebook used to train the model in databricks
 │
 ├── wikimedia_yard_reaas_test/   # Source package with pipeline methods
 │   ├── cleaning_pipeline.py
 │   ├── feature_engineering.py
 │   ├── modelling.py
-│   └── utils.py
+│   ├── utils.py
+│   └── train_and_evaluate_functions.py
 │
 ├── DS_with_ML_takehome_test_1_rev0.2.pdf   # Assignment description
-├── requirements.txt
-└── README.md
-
+├── report.py # report of the work
+├── .pre-commit-config.yml
+├── README.md
+└── pyproject.toml
+```
 ## Environment Setup
 
 ### 1. Create a virtual environment
@@ -105,7 +111,3 @@ Run all pre-commit hooks manually:
 ```bash
 pre-commit run --all-files
 ```
-
-
-
-
