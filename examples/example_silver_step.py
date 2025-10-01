@@ -32,6 +32,3 @@ df_page_title.show(10)
 
 # Write Silver DF as Delta
 write_delta(df_page_title, silver_path, mode_str="overwrite")
-
-
-# todo remove capitol letters, understand if we want to remove also _ and substitude them with spaces

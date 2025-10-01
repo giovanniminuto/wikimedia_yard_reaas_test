@@ -192,9 +192,7 @@ lang_map = {
 
 def get_lang_map_expr() -> Column:
     """
-    This function solve the problem
-    The problem is not your import anymore, it’s that you’re calling pyspark.sql.functions.lit() at module import time — but Spark isn’t initialized yet.
-    lit (and create_map) require a live SparkContext, and since you don’t have a SparkSession running when Python imports your module, it crashes:
+    Build a Spark SQL expression that maps language codes to their full names.
     """
     return F.create_map([F.lit(x) for x in sum(lang_map.items(), ())])
 

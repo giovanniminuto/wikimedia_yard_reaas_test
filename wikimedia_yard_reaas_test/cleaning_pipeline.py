@@ -106,8 +106,6 @@ def silver_transform_domain_step(df: DataFrame, lang_map_expr: Callable) -> Data
     Derive language, database_name, and is_mobile fields from domain_code,
     and filter out special domain codes (commons, meta, incubator, etc.).
 
-    todo improve description
-
     Args:
         df (DataFrame): Input DataFrame with 'domain_code'.
         lang_map_expr (Callable): Function returning a Spark map expression
@@ -190,7 +188,6 @@ def silver_transform_page_title(df: DataFrame) -> DataFrame:
     )
 
     clean_df = df_name_spaces.filter(F.col("namespace").isin(valid_namespaces))
-    # todo do the name space part only is the namespace is reconized
 
     return clean_df
 
@@ -216,7 +213,6 @@ def language_filter(
         list[DataFrame]: a list with all the Filtered DataFrames
     """
 
-    # todo add disk warning
     if isinstance(languages, str):
         languages = [languages]
 
@@ -322,9 +318,7 @@ def build_ml_dataset(
         - Assumes `file_date` is compatible with Spark date functions and
           comparable to the provided window boundaries.
     """
-    # ----------------------
     # Filter obs + churn
-    # ----------------------
     obs_df = df.filter(
         (F.col("file_date") >= F.lit(obs_start)) & (F.col("file_date") <= F.lit(obs_end))
     )
@@ -332,34 +326,26 @@ def build_ml_dataset(
         (F.col("file_date") >= F.lit(lbl_start)) & (F.col("file_date") <= F.lit(lbl_end))
     )
 
-    # ----------------------
     # Daily aggregates
-    # ----------------------
     obs_df = obs_df.withColumn("dow", F.dayofweek("file_date"))  # 1=Sunday, 7=Saturday
 
     daily = obs_df.groupBy(["file_date", "dow"] + key_cols).agg(
         F.sum("count_views").alias("views_day")
     )
 
-    # ----------------------
     # Rolling sums (no leakage)
-    # ----------------------
     time_w = Window.partitionBy(key_cols).orderBy(F.col("file_date")).rowsBetween(-6, 0)
     time_w3 = Window.partitionBy(key_cols).orderBy(F.col("file_date")).rowsBetween(-2, 0)
     daily = daily.withColumn("sum_3d", F.sum("views_day").over(time_w3))
 
-    # ----------------------
     # Last day snapshot
-    # ----------------------
     last_day = (
         daily.filter(F.col("file_date") == F.lit(obs_end))
         .select(key_cols + ["views_day", "sum_3d"])
         .withColumnRenamed("views_day", "views_last_day")
     )
 
-    # ----------------------
     # Aggregate features
-    # ----------------------
     agg_feats = daily.groupBy(key_cols).agg(
         F.countDistinct("file_date").alias("days_active"),
         F.sum("views_day").alias("views_total"),
@@ -369,9 +355,7 @@ def build_ml_dataset(
         F.expr("stddev_pop(views_day)").alias("views_std_dow"),
     )
 
-    # ----------------------
     # Merge features
-    # ----------------------
     features = (
         agg_feats.join(last_day, on=key_cols, how="left").fillna(
             {
@@ -389,9 +373,7 @@ def build_ml_dataset(
         )
     )
 
-    # ----------------------
     # Labels
-    # ----------------------
     alive_keys = lbl_df.select(key_cols).distinct().withColumn("alive_flag", F.lit(1))
     obs_keys = daily.select(key_cols).distinct()
     labels = (
@@ -400,9 +382,7 @@ def build_ml_dataset(
         .drop("alive_flag")
     )
 
-    # ----------------------
     # Join features + labels
-    # ----------------------
     ml_dataset = features.join(labels, on=key_cols, how="inner")
 
     return ml_dataset

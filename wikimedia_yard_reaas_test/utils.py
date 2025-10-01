@@ -102,7 +102,6 @@ def write_delta(
     partition: str = "file_date",
 ) -> None:
     """
-    todo_move to utils
     Write DataFrame to Delta Table partitioned by file_date.
 
     Args:
@@ -121,7 +120,6 @@ def write_delta(
 
 def read_delta_table(spark: SparkSession, delta_table_path: Union[Path, str]) -> DataFrame:
     """
-    todo: move in utils
     Read Delta table.
 
     Args:
