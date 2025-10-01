@@ -1,9 +1,8 @@
 from wikimedia_yard_reaas_test.cleaning_pipeline import (
     language_filter,
-    compute_daily_pageviews,
-    compute_daily_summary,
+    build_ml_dataset,
 )
-from wikimedia_yard_reaas_test.utils import create_spark, read_delta_table
+from wikimedia_yard_reaas_test.utils import create_spark, read_delta_table, write_delta
 
 
 # ----------------------
@@ -16,24 +15,38 @@ spark = create_spark()
 # delta paths
 silver_path = "data/silver/pageviews/2025-01"
 
-gold_path_daily_page = "data/daily_page/pageviews/2025-01"
-gold_path_daily_summary = "data/daily_summary/pageviews/2025-01"
+gold_path_test_set = "data/test_set/pageviews/2025-01"
+gold_path_train_set = "data/train_set/pageviews/2025-01"
 gold_path_languages = "data/languages/pageviews/2025-01"
 
 
 silver_df = read_delta_table(spark, silver_path)
 
-silver_df.show(10)
 
-# Page-level pre-aggregation
-daily_page = compute_daily_pageviews(silver_df)
-
-# Project-level daily summary
-daily_summary = compute_daily_summary(daily_page)
-
-# Optional: export English-only for dashboards
+# generate single-language delta lake db
 languages = ["English", "Italian", "French", "German", "Spanish"]
-language_filter(silver_df, languages=languages, path=gold_path_languages)
+list_of_db = language_filter(silver_df, languages=languages, path=gold_path_languages)
 
 
-# todo improve titles
+train_set = build_ml_dataset(
+    list_of_db[1],  # italian delta lake
+    obs_start="2025-01-01",
+    obs_end="2025-01-23",
+    lbl_start="2025-01-24",
+    lbl_end="2025-01-27",
+)
+
+test_set = build_ml_dataset(
+    list_of_db[1],  # italian delta lake
+    obs_start="2025-01-05",
+    obs_end="2025-01-27",
+    lbl_start="2025-01-28",
+    lbl_end="2025-01-31",
+)
+
+write_delta(df=train_set, delta_path=gold_path_train_set)
+write_delta(df=test_set, delta_path=gold_path_test_set)
+
+
+print("Train rows:", train_set.count())
+print("Test rows:", test_set.count())

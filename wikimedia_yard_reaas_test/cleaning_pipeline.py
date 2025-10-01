@@ -11,22 +11,20 @@ from pyspark.sql.functions import (
     size,
 )
 from pyspark.sql import functions as F
-
-from typing import Optional, Union, Callable
-from pathlib import Path
-from pyspark.sql import DataFrame
-from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 from pyspark.sql.functions import col
 
+from typing import Optional, Union, Callable, List
+from pathlib import Path
+import datetime
 
 from wikimedia_yard_reaas_test.utils import write_delta
 from wikimedia_yard_reaas_test.maps import valid_namespaces
 
+# bronze
 
-# -----------------------
-# Schema
-# -----------------------
-def get_raw_schema() -> StructType:
+
+def bronze_get_raw_schema() -> StructType:
     """
     Return schema for raw Wikimedia pageviews.
     """
@@ -40,9 +38,6 @@ def get_raw_schema() -> StructType:
     )
 
 
-# -----------------------
-# Read raw data
-# -----------------------
 def bronze_read_and_modify_raw_files(
     spark: SparkSession, input_dir: str, schema: StructType
 ) -> DataFrame:
@@ -88,6 +83,7 @@ def bronze_read_and_modify_raw_files(
     return df_with_date_time
 
 
+# silver
 def silver_apply_quality_checks(df: DataFrame) -> DataFrame:
     """
     Apply sanity checks:
@@ -199,90 +195,7 @@ def silver_transform_page_title(df: DataFrame) -> DataFrame:
     return clean_df
 
 
-# -----------------------
-# Daily Page-level Views
-# -----------------------
-def compute_daily_pageviews(df: DataFrame, path: Optional[Union[Path, str]] = None) -> DataFrame:
-    """
-    Compute daily page-level views.
-
-    Args:
-        df (DataFrame): Silver DataFrame with at least
-            - file_date (date or string 'yyyyMMdd')
-            - language (string)
-            - database_name (string)
-            - page_title (string)
-            - count_views (int)
-
-    Returns:
-        DataFrame: Aggregated page-level views with columns:
-            - dt (date)
-            - language
-            - database_name
-            - page_title
-            - views_page (int)
-    """
-    daily_page = (
-        df.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
-        .groupBy("dt", "language", "database_name", "page_title")
-        .agg(F.sum("count_views").alias("views_page"))
-    )
-
-    if path:
-        write_delta(df=daily_page, delta_path=path)
-
-    return daily_page
-
-
-# -----------------------
-# Daily Project-level Summary
-# -----------------------
-def compute_daily_summary(
-    daily_page: DataFrame,
-    path: Optional[Union[Path, str]] = None,
-) -> DataFrame:
-    """
-    Compute daily summaries per project and optionally write to Delta.
-
-    Metrics:
-      - total_views (sum of views across pages)
-      - distinct_pages (unique pages viewed)
-      - diversity_index (distinct_pages / total_views)
-
-    Args:
-        daily_page (DataFrame): Output from compute_daily_pageviews,
-            must contain columns ['dt','language','database_name','page_title','views_page'].
-        path (Union[Path,str], optional): If provided, writes results to Delta Lake at this path,
-            partitioned by 'dt'.
-
-    Returns:
-        DataFrame: Daily summary per project with columns:
-            - dt (date)
-            - language
-            - database_name
-            - total_views (int)
-            - distinct_pages (int)
-            - diversity_index (float)
-    """
-    required_cols = {"dt", "language", "database_name", "page_title", "views_page"}
-    if not required_cols.issubset(set(daily_page.columns)):
-        raise ValueError(
-            f"Missing required columns. Expected {required_cols}, got {set(daily_page.columns)}"
-        )
-
-    daily_summary_df = (
-        daily_page.groupBy("dt", "language", "database_name")
-        .agg(
-            F.sum("views_page").alias("total_views"),
-            F.countDistinct("page_title").alias("distinct_pages"),
-        )
-        .withColumn("diversity_index", F.col("distinct_pages") / F.col("total_views"))
-    )
-
-    if path:
-        write_delta(df=daily_summary_df, delta_path=path)
-
-    return daily_summary_df
+# Gold
 
 
 def language_filter(
@@ -340,3 +253,156 @@ def optimize_and_vacuum(spark: SparkSession, silver_path: Union[Path, str]) -> N
         VACUUM delta.`{silver_path}` RETAIN 168 HOURS
     """
     )
+
+
+def build_ml_dataset(
+    df: DataFrame,
+    obs_start: Union[str, datetime.date],
+    obs_end: Union[str, datetime.date],
+    lbl_start: Union[str, datetime.date],
+    lbl_end: Union[str, datetime.date],
+    key_cols: List[str] = ["language", "database_name", "is_mobile", "namespace", "page_title"],
+) -> DataFrame:
+    """
+    Build a machine learning dataset for churn prediction.
+
+    The function transforms raw pageview logs into a supervised dataset where each row
+    corresponds to a unique entity (defined by `key_cols`). It computes activity,
+    recency, seasonality, and diversity features over the observation window, and
+    generates churn labels based on presence in the label window.
+
+    Args:
+        df (DataFrame):
+            Input Spark DataFrame with at least the following columns:
+            - file_date (date or string in 'yyyy-MM-dd' format)
+            - domain_code (str)
+            - page_title (str)
+            - count_views (int)
+        obs_start (str | datetime.date):
+            Start date of the observation window (inclusive).
+        obs_end (str | datetime.date):
+            End date of the observation window (inclusive).
+            All feature computations are restricted to this period.
+        lbl_start (str | datetime.date):
+            Start date of the label window (inclusive).
+        lbl_end (str | datetime.date):
+            End date of the label window (inclusive).
+            Used to determine churn labels.
+        key_cols (List[str], optional):
+            Columns that uniquely identify an entity.
+            Defaults to ["language", "database_name", "is_mobile", "namespace", "page_title"].
+
+    Returns:
+        DataFrame:
+            Spark DataFrame with one row per entity, including:
+
+            **Aggregate features**
+                - days_active: number of active days in the observation window
+                - views_total, views_mean, views_max, views_median, views_std
+                - trend_slope: linear regression slope of activity over time
+
+            **Recency / rolling features**
+                - views_last_day: activity on the last observation day
+                - sum_3d: rolling sums over last 3 days
+
+            **Seasonality features**
+                - unique_weekdays: number of distinct weekdays active
+                - views_std_dow: variation across weekdays
+
+            **Sparsity indicator**
+                - sparsity_level: categorical label {very_sparse, sparse, medium, frequent}
+
+            **Label**
+                - churn: 1 if the entity disappeared in label window, else 0
+
+    Notes:
+        - Protects against data leakage by restricting features strictly to the
+          observation window (`obs_start`–`obs_end`).
+        - Label generation compares presence in the label window (`lbl_start`–`lbl_end`).
+        - Assumes `file_date` is compatible with Spark date functions and
+          comparable to the provided window boundaries.
+    """
+    # ----------------------
+    # Filter obs + churn
+    # ----------------------
+    obs_df = df.filter(
+        (F.col("file_date") >= F.lit(obs_start)) & (F.col("file_date") <= F.lit(obs_end))
+    )
+    lbl_df = df.filter(
+        (F.col("file_date") >= F.lit(lbl_start)) & (F.col("file_date") <= F.lit(lbl_end))
+    )
+
+    # ----------------------
+    # Daily aggregates
+    # ----------------------
+    obs_df = obs_df.withColumn("dow", F.dayofweek("file_date"))  # 1=Sunday, 7=Saturday
+
+    daily = obs_df.groupBy(["file_date", "dow"] + key_cols).agg(
+        F.sum("count_views").alias("views_day")
+    )
+
+    # ----------------------
+    # Rolling sums (no leakage)
+    # ----------------------
+    time_w = Window.partitionBy(key_cols).orderBy(F.col("file_date")).rowsBetween(-6, 0)
+    time_w3 = Window.partitionBy(key_cols).orderBy(F.col("file_date")).rowsBetween(-2, 0)
+    daily = daily.withColumn("sum_3d", F.sum("views_day").over(time_w3))
+
+    # ----------------------
+    # Last day snapshot
+    # ----------------------
+    last_day = (
+        daily.filter(F.col("file_date") == F.lit(obs_end))
+        .select(key_cols + ["views_day", "sum_3d"])
+        .withColumnRenamed("views_day", "views_last_day")
+    )
+
+    # ----------------------
+    # Aggregate features
+    # ----------------------
+    agg_feats = daily.groupBy(key_cols).agg(
+        F.countDistinct("file_date").alias("days_active"),
+        F.sum("views_day").alias("views_total"),
+        F.avg("views_day").alias("views_mean"),
+        F.stddev_pop("views_day").alias("views_std"),
+        F.countDistinct("dow").alias("unique_weekdays"),
+        F.expr("stddev_pop(views_day)").alias("views_std_dow"),
+    )
+
+    # ----------------------
+    # Merge features
+    # ----------------------
+    features = (
+        agg_feats.join(last_day, on=key_cols, how="left").fillna(
+            {
+                "views_last_day": 0,
+                "sum_3d": 0,
+            }
+        )
+        # --- Sparsity guards ---
+        .withColumn(
+            "sparsity_level",
+            F.when(F.col("days_active") <= 2, "very_sparse")
+            .when(F.col("days_active") <= 5, "sparse")
+            .when(F.col("days_active") <= 8, "medium")
+            .otherwise("frequent"),
+        )
+    )
+
+    # ----------------------
+    # Labels
+    # ----------------------
+    alive_keys = lbl_df.select(key_cols).distinct().withColumn("alive_flag", F.lit(1))
+    obs_keys = daily.select(key_cols).distinct()
+    labels = (
+        obs_keys.join(alive_keys, on=key_cols, how="left")
+        .withColumn("churn", F.when(F.col("alive_flag").isNull(), 1).otherwise(0))
+        .drop("alive_flag")
+    )
+
+    # ----------------------
+    # Join features + labels
+    # ----------------------
+    ml_dataset = features.join(labels, on=key_cols, how="inner")
+
+    return ml_dataset
