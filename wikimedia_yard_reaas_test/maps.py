@@ -200,7 +200,8 @@ def get_lang_map_expr() -> Column:
 
 
 valid_namespaces = [
-    "Article" "User",
+    "Article",
+    "User",
     "Wikipedia",
     "WP",
     "Project",
@@ -237,7 +238,3 @@ valid_namespaces = [
     "Module talk",
     "Event talk",
 ]
-
-
-def hello_word_function_printer() -> None:
-    print("hello word")

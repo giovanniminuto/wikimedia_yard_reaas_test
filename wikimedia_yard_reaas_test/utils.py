@@ -5,13 +5,30 @@ from delta import configure_spark_with_delta_pip
 
 from typing import Optional, Union, Callable
 from pathlib import Path
-
+from pyspark.sql.window import Window
 
 from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql import functions as F
 
 
 def download_pageviews_files(base_url: str, output_dir: str) -> None:
-    # Step 1: Scrape the index page to get all file names
+    """
+    Download Wikipedia pageviews files from a given base URL.
+
+    This function scrapes the index page at `base_url` to find all
+    files matching the pattern "pageviews-2025*.gz". It downloads
+    each file into the specified `output_dir` if not already present,
+    ensuring that duplicate downloads are avoided. At the end, it
+    prints the total number of files found and the cumulative size
+    of the downloaded files.
+
+    Args:
+        base_url (str): The URL of the index page containing links to
+            pageview files.
+        output_dir (str): The local directory where downloaded files
+            should be stored. Created if it does not exist.
+    """
+    # Scrape the index page to get all file names
     resp = requests.get(base_url)
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -23,7 +40,7 @@ def download_pageviews_files(base_url: str, output_dir: str) -> None:
 
     print(f"Found {len(files)} files to download")
 
-    # Step 2: Download files if not already present
+    # Download files if not already present
     os.makedirs(output_dir, exist_ok=True)
 
     for f in files:
@@ -38,7 +55,7 @@ def download_pageviews_files(base_url: str, output_dir: str) -> None:
         else:
             print(f"Already downloaded {f}")
 
-    # Step 3: Compute total size of all downloaded files
+    # Compute total size of all downloaded files
     sizes = []
     names = []
 
@@ -52,7 +69,7 @@ def download_pageviews_files(base_url: str, output_dir: str) -> None:
     print(f"\nTotal bytes downloaded: {total_bytes:,}")
 
 
-def create_spark(app_name: str = "Wikimedia Bronze Processing") -> SparkSession:
+def create_spark(app_name: str = "Wikimedia Processing") -> SparkSession:
     """
     Create and configure a Spark session with Delta Lake support.
     """
@@ -115,3 +132,44 @@ def read_delta_table(spark: SparkSession, delta_table_path: Union[Path, str]) ->
         DataFrame: delta table dataframe
     """
     return spark.read.format("delta").load(delta_table_path)
+
+
+def upsert_partition(
+    spark: SparkSession,
+    delta_path: Union[Path, str],
+    late_df: DataFrame,
+    partition_date: str,
+    dedup_cols: list,
+) -> None:
+    """
+    Safely handle late data for a partitioned Delta table.
+
+    Args:
+        delta_path (str): Path to Delta table (e.g., "data/silver/pageviews")
+        late_df (DataFrame): DataFrame with new/late records
+        partition_date (str): The date of the partition to fix (format "YYYY-MM-DD")
+        dedup_cols (list): Columns to use for deduplication (e.g. ["page_title","language", "domain_code", "namespace"])
+    """
+
+    # 1. Load the existing partition
+    existing_df = (
+        spark.read.format("delta").load(delta_path).filter(F.col("file_date") == partition_date)
+    )
+
+    # 2. Union old + new
+    combined_df = existing_df.unionByName(late_df)
+
+    # 3. Deduplicate (keep latest row if duplicates exist)
+    window = Window.partitionBy(*dedup_cols).orderBy(
+        F.col("ingestion_time").desc()
+    )  # if you track ingestion timestamp
+    deduped_df = (
+        combined_df.withColumn("rn", F.row_number().over(window)).filter("rn = 1").drop("rn")
+    )
+
+    # 4. Overwrite just that partition
+    deduped_df.write.format("delta").mode("overwrite").option(
+        "replaceWhere", f"file_date = '{partition_date}'"
+    ).save(delta_path)
+
+    print(f"✅ Partition {partition_date} updated with late data.")

@@ -4,7 +4,7 @@ from pyspark.sql.window import Window
 from pyspark.sql.functions import col
 
 
-def dau(df: DataFrame) -> DataFrame:
+def dau_wiki(df: DataFrame) -> DataFrame:
     """
     Compute Daily Active Usage (DAU).
 
@@ -26,9 +26,9 @@ def dau(df: DataFrame) -> DataFrame:
             - DAU (int): distinct pages viewed on that day
     """
     dau_df = (
-        df.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
-        .groupBy("file_date", "language", "database_name")
+        df.groupBy("file_date", "language")
         .agg(F.countDistinct("page_title").alias("DAU"))
+        .orderBy("file_date")
     )
     return dau_df
 

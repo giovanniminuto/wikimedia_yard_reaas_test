@@ -22,8 +22,5 @@ df = bronze_read_and_modify_raw_files(spark, input_dir, schema)
 
 df.show(10, truncate=False)
 
-# Write Silver DF as Delta
+# Write Bronze DF as Delta
 write_delta(df, bronze_path)
-
-
-# todo (late records)

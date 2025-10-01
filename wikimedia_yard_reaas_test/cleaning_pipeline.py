@@ -20,6 +20,7 @@ from pyspark.sql.functions import col
 
 
 from wikimedia_yard_reaas_test.utils import write_delta
+from wikimedia_yard_reaas_test.maps import valid_namespaces
 
 
 # -----------------------
@@ -179,7 +180,8 @@ def silver_transform_page_title(df: DataFrame) -> DataFrame:
     - If prefix exists (e.g. 'Special:AbuseLog'), split on first ':'.
     - Else, assign namespace='Article'.
     """
-    return df.withColumn(
+
+    df_name_spaces = df.withColumn(
         "namespace",
         when(
             size(split(col("page_title"), ":", 2)) > 1, split(col("page_title"), ":", 2).getItem(0)
@@ -190,6 +192,11 @@ def silver_transform_page_title(df: DataFrame) -> DataFrame:
             size(split(col("page_title"), ":", 2)) > 1, split(col("page_title"), ":", 2).getItem(1)
         ).otherwise(col("page_title")),
     )
+
+    clean_df = df_name_spaces.filter(F.col("namespace").isin(valid_namespaces))
+    # todo do the name space part only is the namespace is reconized
+
+    return clean_df
 
 
 # -----------------------

@@ -32,7 +32,8 @@ daily_page = compute_daily_pageviews(silver_df)
 daily_summary = compute_daily_summary(daily_page)
 
 # Optional: export English-only for dashboards
-# languages = ["German", "Spanish"]
-# language_filter(silver_df, languages = languages, path = gold_path_languages)
+languages = ["English", "Italian", "French", "German", "Spanish"]
+language_filter(silver_df, languages=languages, path=gold_path_languages)
+
 
 # todo improve titles
