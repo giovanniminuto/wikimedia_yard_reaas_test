@@ -2,24 +2,17 @@ import pyspark.sql.functions as F
 import matplotlib.pyplot as plt
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    col,
-    regexp_extract,
-    input_file_name,
-    to_date,
-    split,
-    array_contains,
-    size,
-    when,
-)
-from pyspark.sql.types import StringType
+
 from pyspark.sql import functions as F
-from wikimedia_yard_reaas_test.maps import get_lang_map_expr
 from delta import configure_spark_with_delta_pip
-from pyspark.sql import functions as F, Window
-from wikimedia_yard_reaas_test.kpis import dau_wiki
+from pyspark.sql import functions as F
 import matplotlib.pyplot as plt
 import pandas as pd
+
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
+import datetime
 
 # -----------------------
 # 1. Spark session
@@ -59,7 +52,7 @@ for language in language_names:
     path = f"data/languages/pageviews/2025-01/{language}"
     df_lang = spark.read.format("delta").load(path)
     df_lang = df_lang.withColumn("dt", F.to_date("file_date", "yyyyMMdd"))
-    df_lang = df_lang.sample(0.5)
+    df_lang = df_lang.sample(0.05)
 
     # -----------------------
     # 2. Compute DAU (per day)
@@ -96,33 +89,6 @@ for language in language_names:
 # 5. Combine all languages
 # -----------------------
 all_stickiness = pd.concat(stickiness_list)
-
-# # -----------------------
-# # 6. Plot comparison
-# # -----------------------
-# plt.figure(figsize=(12,6))
-
-# for language in language_names:
-#     subset = all_stickiness[all_stickiness["language"] == language]
-#     plt.plot(subset["dt"], subset["Stickiness"], marker="o", label=language)
-
-# plt.title("DAU/MAU Stickiness (%) by Language")
-# plt.xlabel("Date")
-# plt.ylabel("Stickiness (%)")
-# plt.legend()
-# plt.grid(True)
-
-# plt.savefig("stickiness_by_language.png", dpi=300, bbox_inches="tight")
-# plt.show()
-
-
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import pandas as pd
-import datetime
-
-# Assume you already have `all_stickiness` DataFrame from before
-# columns: dt (datetime), Stickiness, language
 
 plt.figure(figsize=(12, 6))
 

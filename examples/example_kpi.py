@@ -129,7 +129,7 @@ language_names = ["Italian", "English", "German", "Spanish", "French"]
 for language in language_names:
     path = f"data/languages/pageviews/2025-01/{language}"
     df_lang = spark.read.format("delta").load(path)
-    samples_df = df_lang.sample(0.00001)
+    samples_df = df_lang.sample(0.01)
 
     dau_df = dau_wiki(samples_df)  # returns file_date, DAU
     dau_pd = dau_df.toPandas()
@@ -171,6 +171,7 @@ axes[0].set_title("Daily Active Usage (%) by Language")
 axes[0].set_xlabel("Date")
 axes[0].set_ylabel("Share of Distinct Pages (%)")
 axes[0].legend()
+axes[0].tick_params(axis="x", rotation=45)
 
 # Right: English vs Others
 for lang in ["English", "Others"]:
@@ -180,7 +181,8 @@ for lang in ["English", "Others"]:
 axes[1].set_title("English vs Others")
 axes[1].set_xlabel("Date")
 axes[1].legend()
-
+axes[1].tick_params(axis="x", rotation=45)
+# plt.xticks(rotation=45)
 plt.tight_layout()
 plt.savefig("dau_percentage_comparison.png", dpi=300, bbox_inches="tight")
 plt.show()

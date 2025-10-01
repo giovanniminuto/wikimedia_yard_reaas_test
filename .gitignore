@@ -21,7 +21,7 @@ site/
 # data
 data/
 ./data.*
-*.ipynb
+
 
 # files
 *.png
