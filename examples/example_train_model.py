@@ -1,3 +1,4 @@
+import os
 from sklearn.model_selection import train_test_split
 
 from wikimedia_yard_reaas_test.utils import create_spark, read_delta_table
@@ -10,20 +11,24 @@ from wikimedia_yard_reaas_test.train_and_evaluate_functions import (
 )
 
 
-# ----------------------------
-# Main
-# ----------------------------
-
-
 spark = create_spark()
 
 # Paths
 gold_path_train_set = "data/train_set/pageviews/2025-01"
 gold_path_test_set = "data/test_set/pageviews/2025-01"
 
+for path in [gold_path_train_set, gold_path_test_set]:
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Missing Delta table at: {path}\n"
+            f"➡️  To generate it, run the full pipeline: Bronze → Silver → Gold."
+        )
 # Load
-df_train = read_delta_table(spark, gold_path_train_set)
-df_test_set = read_delta_table(spark, gold_path_test_set)
+train_set = read_delta_table(spark, gold_path_train_set)
+test_set = read_delta_table(spark, gold_path_test_set)
+
+df_train = train_set.toPandas()
+df_test_set = test_set.toPandas()
 
 # Train features/target
 y = df_train["churn"].astype(int)

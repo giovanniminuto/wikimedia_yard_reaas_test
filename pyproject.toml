@@ -3,7 +3,7 @@ requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "my-py-template"
+name = "yard-reaas-test"
 version = "0.1.0"
 description = "Python Starter Template: A minimal Python project template with a pre-configured pyproject.toml to get started quickly. Includes configuration stubs for: mypy, pytest, pre-commit, Github CI/CD. This repository is intended as a clean slate for new projects: lightweight, flexible, and easy to extend."
 authors = [
