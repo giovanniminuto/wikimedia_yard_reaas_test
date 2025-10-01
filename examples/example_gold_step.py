@@ -5,10 +5,6 @@ from wikimedia_yard_reaas_test.cleaning_pipeline import (
 from wikimedia_yard_reaas_test.utils import create_spark, read_delta_table, write_delta
 
 
-# ----------------------
-# example of silver step
-# ----------------------
-
 # Spark session
 spark = create_spark()
 
@@ -43,9 +39,13 @@ test_set = build_ml_dataset(
     lbl_start="2025-01-28",
     lbl_end="2025-01-31",
 )
-
-write_delta(df=train_set, delta_path=gold_path_train_set)
-write_delta(df=test_set, delta_path=gold_path_test_set)
+train_set.show(10)
+write_delta(
+    df=train_set, delta_path=gold_path_train_set, mode_str="overwrite", partition="days_active"
+)
+write_delta(
+    df=test_set, delta_path=gold_path_test_set, mode_str="overwrite", partition="days_active"
+)
 
 
 print("Train rows:", train_set.count())

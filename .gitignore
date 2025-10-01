@@ -29,3 +29,6 @@ examples/*.png
 
 # api caches
 apicache/
+
+# python cache
+__pycache__/
