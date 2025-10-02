@@ -85,13 +85,10 @@ source .venv/bin/activate
 
 ### 3. Install dependencies
 Install project dependencies:
-ℹRequires pip >= 21.3
+Requires pip >= 21.3
 ```bash
 pip install -e .
 ```
-The default dependencies include Qadence ([link](https://github.com/pasqal-io/qadence)) and Jupyter Notebook support.
-You can edit them under [project.dependencies] in pyproject.toml.
-
 Install the optional dependencies to use pre-commit/pytests/mkdocs:
 ```bash
 pip install -e ".[dev]"
@@ -105,7 +102,7 @@ pre-commit install
 
 ## Here the last info to run properly the Pre-commit
 
-### 🧹 Pre-commit Hooks
+### Pre-commit Hooks
 
 Run all pre-commit hooks manually:
 ```bash
