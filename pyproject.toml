@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "yard-reaas-test"
 version = "0.1.0"
-description = "Python Starter Template: A minimal Python project template with a pre-configured pyproject.toml to get started quickly. Includes configuration stubs for: mypy, pytest, pre-commit, Github CI/CD. This repository is intended as a clean slate for new projects: lightweight, flexible, and easy to extend."
+description = "Demonstrate, using any combination of Spark, advanced modelling, visual analytics, and statistical reasoning, that you can isolate, quantify, and convincingly defend the primary drivers of early subscriber churn in the dataset."
 authors = [
     { name = "Giovanni Minuto", email = "minutogiovanni@gmail.com" }
 ]
